@@ -18,51 +18,58 @@ var connection = mysql.createConnection({
 // Connect to database via connection variable above
 connection.connect(function (err) {
     if (err) throw err;
+    promptUser();
+});
+
+// function to ask user starting question
+function promptUser() {
     inquirer
         .prompt(
             {
                 name: "userRequest",
                 type: "list",
                 message: "What would you like to do today?",
-                choices: ["Purchase an item", "I am finished with my transactions"]
+                choices: ["Purchase an item", "I am finished with my transaction"]
             }
         )
         .then(function (answer) {
-            switch (answer.userRequest) {
-                case "I am finished with my transaction":
-                    console.log("Thank you for your business!");
-                    break;
-
-                case "Purchase an item":
-                    makePurchase();
+            if (answer.userRequest === "I am finished with my transaction") {
+                console.log("Thank you for your business!")
+                connection.end();
+                process.exit();
+            } else {
+                makePurchase();
             }
         });
-    }); // end of promptUser function
-    
-    // Function to fulfill customers order by updating SQL database to reflect the remaining quantity.    
-    function updateProduct(id, quantityRequesting, currentQuantity, price) {
-        var customerCost = price * quantityRequesting;
-        var query = connection.query(
-            "UPDATE products SET ? WHERE ?",
-            [
-                {
-                    stock_quantity: currentQuantity - quantityRequesting
-                },
-                {
-                    item_id: id
-                }
-            ],
-            function(err, res) {
-                // Once the update goes through, show the customer the total cost of their purchase.
-        console.log(res.affectedRows + " products updated!\n" + "Your total cost is:  " + customerCost);
-        // Call deleteProduct AFTER the UPDATE completes
-      }
+} // end of promptUser function
+
+
+// Function to fulfill customers order by updating SQL database to reflect the remaining quantity.    
+function updateProduct(id, quantityRequesting, currentQuantity, productName, price) {
+    var customerCost = parseFloat(price) * parseInt(quantityRequesting);
+    var product = productName;
+    connection.query(
+        "UPDATE products SET ? WHERE ?",
+        [
+            {
+                stock_quantity: parseInt(currentQuantity) - parseInt(quantityRequesting)
+            },
+            {
+                item_id: id
+            }
+        ],
+        function (err, res) {
+            if (err) throw err;
+            // Once the update goes through, show the customer the total cost of their purchase.
+            console.log(res.affectedRows + " product updated!\n" + "Your total cost for " + product + " is:  $" + customerCost);
+            promptUser();
+        }
     );
 } // end of updateProduct function
 
 function makePurchase() {
     inquirer
-        .prompt(
+        .prompt([
             // First ask user for the ID of the product they would like to buy.
             {
                 name: "id",
@@ -80,14 +87,14 @@ function makePurchase() {
                 name: "quantity",
                 type: "input",
                 message: "How many would you like to buy?",
-                validate: function(value) {
+                validate: function (value) {
                     if (isNaN(value) === false) {
-                      return true;
+                        return true;
                     }
                     return false;
-                  }
+                }
             }
-        )
+        ])
         // Prompt method returns a promise containing the answers
         .then(function (answer) {
             // store answers in variables
@@ -95,17 +102,19 @@ function makePurchase() {
             var quantityRequested = parseInt(answer.quantity);
 
             // Create query to search database table
-            var query = "SELECT item_id, product_name, stock_quantity FROM products WHERE ?";
+            var query = "SELECT item_id, product_name, stock_quantity, price FROM products WHERE ?";
             connection.query(query, { item_id: itemId }, function (err, res) {
                 // Once the customer has placed the order, check if the "store" has enough of the product to meet the customer's request.
                 // If not enough, log a phrase like "Insufficient quantity!", and then prevent the order from going through.
                 if (res[0].stock_quantity === 0) {
                     console.log("Insufficient quantity!")
-                // If the "store" does have enough of the product, you should fulfill the customer's order
+                    promptUser();
+                    // If the "store" does have enough of the product, you should fulfill the customer's order
                 } else if (res[0].stock_quantity < quantityRequested) {
-                    console.log("There is only " +  + " of this item remaining.")                 
+                    console.log("There is only " + res[0].stock_quantity + " of this item remaining.")
+                    promptUser();
                 } else {
-                    updateProduct(itemId, quantityRequested, res[0].stock_quantity, res[0].price);
+                    updateProduct(itemId, quantityRequested, res[0].stock_quantity, res[0].product_name, res[0].price);
                 }
             });
         });
